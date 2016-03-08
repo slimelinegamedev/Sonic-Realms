@@ -1,150 +1,116 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.UI;
 
 namespace SonicRealms.UI
 {
+    /// <summary>
+    /// Simple manager than ensures only one of its child Menu Screens is open at any time.
+    /// </summary>
     [DisallowMultipleComponent]
-    public class MenuScreenManager : MonoBehaviour
+    public class MenuScreenManager : UIBehaviour
     {
-        public EventSystem EventSystem;
+        /// <summary>
+        /// All menu screens that are immediate children of the manager.
+        /// </summary>
+        protected List<MenuScreen> MenuScreens;
 
-        public MenuScreen InitialScreen;
+        /// <summary>
+        /// The menu screen to open first
+        /// </summary>
+        public MenuScreen FirstMenuScreen;
 
-        [HideInInspector] public MenuScreen CurrentScreen;
-        [HideInInspector] public List<MenuScreen> Screens;
+        /// <summary>
+        /// The currently open menu screen.
+        /// </summary>
+        public MenuScreen OpenMenuScreen;
 
-        private GameObject _previouslySelected;
-
-        protected MenuScreen OpeningScreen;
-        protected MenuScreen ClosingScreen;
-        protected MenuScreen NextScreen;
-
-        public void Reset()
+        protected override void Awake()
         {
-            EventSystem = FindObjectOfType<EventSystem>();
-            InitialScreen = null;
+            MenuScreens = new List<MenuScreen>();
         }
 
-        public void Start()
+        /// <summary>
+        /// Updates the manager's list of menu screens.
+        /// </summary>
+        public void UpdateList()
         {
-            Screens = FindObjectsOfType<MenuScreen>().ToList();
-
-            Open(InitialScreen);
+            if (MenuScreens == null) MenuScreens = new List<MenuScreen>();
+            GetComponentsInChildren(MenuScreens);
+            MenuScreens.RemoveAll(screen => !screen.transform.parent == transform);
         }
 
-        public void Open(MenuScreen screen)
+        protected override void Start()
         {
-            if (CurrentScreen == screen) return;
-            if (CurrentScreen == null)
+            if (FirstMenuScreen != null) Open(FirstMenuScreen);
+        }
+
+        protected override void OnTransformParentChanged()
+        {
+            UpdateList();
+        }
+
+        /// <summary>
+        /// Opens the given menu screen.
+        /// </summary>
+        /// <param name="menuScreen"></param>
+        public void Open(MenuScreen menuScreen)
+        {
+            StartCoroutine(Open_Coroutine(menuScreen, () => { }));
+        }
+
+        /// <summary>
+        /// Opens the menu screen with the given name. This will only open menu screens that are immediate
+        /// children of the manager.
+        /// </summary>
+        /// <param name="menuScreenName"></param>
+        public void Open(string menuScreenName)
+        {
+            var menuScreen = MenuScreens.FirstOrDefault(screen => screen.name == menuScreenName);
+            if (menuScreen != null) Open(menuScreen);
+        }
+
+        /// <summary>
+        /// Closes the currently open menu screen.
+        /// </summary>
+        public void CloseCurrent()
+        {
+            StartCoroutine(CloseCurrent_Coroutine(() => { }));
+        }
+
+        protected IEnumerator Open_Coroutine(MenuScreen menuScreen, Action callback)
+        {
+            if (menuScreen == OpenMenuScreen)
             {
-                OpenImmediate(screen);
-            }
-            else
-            {
-                NextScreen = screen;
-                CloseCurrent(screen);
-            }
-        }
-
-        public void OpenImmediate(MenuScreen screen)
-        {
-            OpeningScreen = screen;
-
-            EventSystem.enabled = false;
-
-            screen.gameObject.SetActive(true);
-            screen.OnFinishOpening.AddListener(OnFinishOpening);
-            screen.Open(CurrentScreen);
-        }
-
-        public void CloseCurrent(MenuScreen nextScreen)
-        {
-            if (CurrentScreen == null) return;
-
-            EventSystem.enabled = false;
-
-            ClosingScreen = CurrentScreen;
-            CurrentScreen.OnFinishClosing.AddListener(OnFinishClosing);
-            CurrentScreen.OnOpenNextScreenEarly.AddListener(OnOpenNextScreenEarly);
-            CurrentScreen.Close(nextScreen);
-        }
-
-        public void OnFinishOpening()
-        {
-            if (ClosingScreen == null)
-            {
-                EventSystem.enabled = true;
-            }
-
-            CurrentScreen = OpeningScreen;
-            OpeningScreen.OnFinishOpening.RemoveListener(OnFinishOpening);
-            OpeningScreen.gameObject.SetActive(true);
-
-            if(OpeningScreen.FirstSelectable != null)
-                SetSelected(OpeningScreen.FirstSelectable.gameObject);
-
-            OpeningScreen = null;
-        }
-
-        public void OnFinishClosing()
-        {
-            if (OpeningScreen == null)
-            {
-                EventSystem.enabled = true;
+                callback();
+                yield break;
             }
 
-            if (NextScreen != null)
+            if (OpenMenuScreen != null)
             {
-                OpenImmediate(NextScreen);
+                var done = false;
+                StartCoroutine(CloseCurrent_Coroutine(() => done = true));
+                yield return new WaitUntil(() => done);
             }
 
-            ClosingScreen.OnFinishClosing.RemoveListener(OnFinishClosing);
-            ClosingScreen.OnOpenNextScreenEarly.RemoveListener(OnOpenNextScreenEarly);
-            ClosingScreen.gameObject.SetActive(false);
-
-            ClosingScreen = null;
+            menuScreen.Open();
+            yield return new WaitWhile(() => menuScreen.IsOpening);
         }
 
-        public void OnOpenNextScreenEarly()
+        protected IEnumerator CloseCurrent_Coroutine(Action callback)
         {
-            OpenImmediate(NextScreen);
-        }
-
-        static GameObject FindFirstEnabledSelectable(GameObject gameObject)
-        {
-            GameObject go = null;
-            var selectables = gameObject.GetComponentsInChildren<Selectable>(true);
-            foreach (var selectable in selectables)
+            if (OpenMenuScreen == null)
             {
-                if (selectable.IsActive() && selectable.IsInteractable())
-                {
-                    go = selectable.gameObject;
-                    break;
-                }
+                callback();
+                yield break;
             }
-            return go;
-        }
 
-        //Make the provided GameObject selected
-        //When using the mouse/touch we actually want to set it as the previously selected and 
-        //set nothing as selected for now.
-        private void SetSelected(GameObject go)
-        {
-            //Select the GameObject.
-            EventSystem.SetSelectedGameObject(go);
-
-            //If we are using the keyboard right now, that's all we need to do.
-            //var standaloneInputModule = EventSystem.current.currentInputModule as StandaloneInputModule;
-            //if (standaloneInputModule != null && standaloneInputModule.inputMode == StandaloneInputModule.InputMode.Buttons)
-            //    return;
-
-            //Since we are using a pointer device, we don't want anything selected. 
-            //But if the user switches to the keyboard, we want to start the navigation from the provided game object.
-            //So here we set the current Selected to null, so the provided gameObject becomes the Last Selected in the EventSystem.
-            //EventSystem.current.SetSelectedGameObject(null);
+            OpenMenuScreen.Close();
+            yield return new WaitWhile(() => OpenMenuScreen.IsClosing);
+            callback();
         }
     }
 }

@@ -1,130 +1,121 @@
-﻿using System.Collections.Generic;
-using System.Linq;
+﻿using System;
+using System.Collections;
 using UnityEngine;
-using UnityEngine.Events;
-using UnityEngine.UI;
+using UnityEngine.EventSystems;
 
 namespace SonicRealms.UI
 {
+    /// <summary>
+    /// A menu screen opened and switched between other menu screens by Menu Screen Managers. They're basically
+    /// window frames that keep their Selectables away from other screens' Selectables, and one manager only
+    /// has one menu screen at a time.
+    /// </summary>
     [DisallowMultipleComponent]
-    [RequireComponent(typeof(Animator))]
-    public class MenuScreen : MonoBehaviour
+    public class MenuScreen : UIBehaviour
     {
-        public const int DefaultScreenID = -1;
+        /// <summary>
+        /// The transition this menu screen plays when going to another menu screen.
+        /// </summary>
+        public Transition Transition;
 
-        public int ScreenID;
-        public MenuScreenState State;
+        /// <summary>
+        /// The first item to select when the menu screen is opened. This is only used the first time
+        /// the screen is opened, after which the previously selected item is used.
+        /// </summary>
+        public GameObject FirstItem;
 
-        public List<MenuScreen> Screens;
-
-        public Selectable FirstSelectable;
-
-        [HideInInspector] public UnityEvent OnFinishOpening;
-        [HideInInspector] public UnityEvent OnFinishClosing;
-        [HideInInspector] public UnityEvent OnOpenNextScreenEarly;
-
-        protected List<Selectable> Selectables; 
-
-        protected Animator Animator;
-
-        public string OpenTrigger;
-        public string PreviousInt;
-        public string CloseTrigger;
-        public string DestinationInt;
-
-        protected int OpenTriggerHash;
-        protected int PreviousIntHash;
-        protected int CloseTriggerHash;
-        protected int DestinationIntHash;
-
-        public void Reset()
+        /// <summary>
+        /// Whether the menu screen is currently opening.
+        /// </summary>
+        public bool IsOpening
         {
-            FirstSelectable = GetComponentInChildren<Selectable>();
-
-            OnFinishOpening = new UnityEvent();
-            OnFinishClosing = new UnityEvent();
-            OnOpenNextScreenEarly = new UnityEvent();
-
-            ScreenID = FindObjectsOfType<MenuScreen>().Aggregate(DefaultScreenID, (i, screen) => Mathf.Max(i, screen.ScreenID)) + 1;
-
-            OpenTrigger = "Open";
-            PreviousInt = "";
-            CloseTrigger = "Close";
-            DestinationInt = "";
+            get { return Transition != null && Transition.State == TransitionState.Enter; }
         }
 
-        public void Awake()
+        /// <summary>
+        /// Whether the menu screen is currently closing.
+        /// </summary>
+        public bool IsClosing
         {
-            State = MenuScreenState.Closed;
-            Animator = GetComponent<Animator>();
-
-            OnFinishOpening = OnFinishOpening ?? new UnityEvent();
-            OnFinishClosing = OnFinishClosing ?? new UnityEvent();
-            OnOpenNextScreenEarly = OnOpenNextScreenEarly ?? new UnityEvent();
-
-            OpenTriggerHash = Animator.StringToHash(OpenTrigger);
-            PreviousIntHash = Animator.StringToHash(PreviousInt);
-            CloseTriggerHash = Animator.StringToHash(CloseTrigger);
-            DestinationIntHash = Animator.StringToHash(DestinationInt);
+            get { return Transition != null && Transition.State == TransitionState.Exit; }
         }
 
-        protected void FindScreens()
+        /// <summary>
+        /// The last item the menu screen had selected, which will be preserved if it is closed and reopened.
+        /// </summary>
+        protected GameObject PreviouslySelectedItem;
+
+        protected override void Reset()
         {
-            Screens = new List<MenuScreen>();
-            foreach (var t in transform)
+            Transition = GetComponent<Transition>();
+            FirstItem = transform.childCount > 0 ? transform.GetChild(0).gameObject : null;
+        }
+
+        protected override void Awake()
+        {
+            Transition = Transition ?? GetComponent<Transition>();
+        }
+
+        /// <summary>
+        /// Opens the menu screen.
+        /// </summary>
+        public virtual void Open()
+        {
+            StartCoroutine(Enter_Coroutine(OnEnterComplete));
+        }
+
+        /// <summary>
+        /// Closes the menu screen.
+        /// </summary>
+        public virtual void Close()
+        {
+            StartCoroutine(Exit_Coroutine(OnExitComplete));
+        }
+
+        protected virtual void OnEnterComplete()
+        {
+            var eventSystem = EventSystem.current;
+            if (eventSystem != null)
             {
-                var screen = (t as Transform).GetComponent<MenuScreen>();
-                if (screen != null) Screens.Add(screen);
+                eventSystem.SetSelectedGameObject(FirstItem.gameObject);
             }
         }
 
-        public void Open(MenuScreen previous)
+        protected virtual void OnExitComplete()
         {
-            State = MenuScreenState.Opening;
-
-            if (PreviousIntHash != 0)
-                Animator.SetInteger(PreviousIntHash, previous == null ? DefaultScreenID : previous.ScreenID);
-
-            if (CloseTriggerHash != 0)
-                Animator.ResetTrigger(CloseTriggerHash);
-
-            if (OpenTriggerHash != 0)
-                Animator.SetTrigger(OpenTriggerHash);
-
-            Animator.Update(0f);
+            var eventSystem = EventSystem.current;
+            if (eventSystem != null)
+            {
+                PreviouslySelectedItem = eventSystem.currentSelectedGameObject;
+                eventSystem.SetSelectedGameObject(null);
+            }
         }
 
-        public void Close(MenuScreen destination)
+        protected virtual IEnumerator Enter_Coroutine(Action callback)
         {
-            State = MenuScreenState.Closing;
+            if (Transition == null)
+            {
+                callback();
+                yield break;
+            }
 
-            if(DestinationIntHash != 0)
-                Animator.SetInteger(DestinationIntHash, destination == null ? DefaultScreenID : destination.ScreenID);
-
-            if(OpenTriggerHash != 0)
-                Animator.ResetTrigger(OpenTriggerHash);
-
-            if(CloseTriggerHash != 0)
-                Animator.SetTrigger(CloseTriggerHash);
-
-            Animator.Update(0f);
+            Transition.Enter();
+            yield return new WaitWhile(() => Transition.State == TransitionState.Enter);
+            callback();
         }
 
-        public void OpenNextScreenEarly()
+        protected virtual IEnumerator Exit_Coroutine(Action callback)
         {
-            OnOpenNextScreenEarly.Invoke();
-        }
+            if (Transition == null)
+            {
+                callback();
+                yield break;
+            }
 
-        public void FinishOpening()
-        {
-            State = MenuScreenState.Open;
-            OnFinishOpening.Invoke();
-        }
+            Transition.Exit();
+            yield return new WaitWhile(() => Transition.State == TransitionState.Exit);
 
-        public void FinishClosing()
-        {
-            State = MenuScreenState.Closed;
-            OnFinishClosing.Invoke();
+            callback();
         }
     }
 }
