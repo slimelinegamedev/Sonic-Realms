@@ -36,8 +36,7 @@ namespace SonicRealms.Core.Utils.Editor
                 if (property == null) continue;
                 if (HedgehogEditorGUIUtility.GetAttribute<HideInInspector>(field) != null) continue;
 
-                foreach(var propertyLists in results.Values)
-                    if (propertyLists.Contains(property)) continue;
+                if (results.Values.Any(propertyLists => propertyLists.Contains(property))) continue;
 
                 var attr = HedgehogEditorGUIUtility.GetAttribute<FoldoutAttribute>(field);
                 var type = attr == null ? defaultFoldoutName : attr.Name;

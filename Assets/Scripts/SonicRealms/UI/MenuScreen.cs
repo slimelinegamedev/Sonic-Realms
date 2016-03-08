@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections;
+using System.Linq;
+using SonicRealms.Core.Utils;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -14,8 +16,15 @@ namespace SonicRealms.UI
     public class MenuScreen : UIBehaviour
     {
         /// <summary>
+        /// An ID number for the screen, used in animations.
+        /// </summary>
+        [Tooltip("An ID number for the screen, used in animations.")]
+        public int ScreenID;
+
+        /// <summary>
         /// The transition this menu screen plays when going to another menu screen.
         /// </summary>
+        [Space]
         public Transition Transition;
 
         /// <summary>
@@ -45,15 +54,30 @@ namespace SonicRealms.UI
         /// </summary>
         protected GameObject PreviouslySelectedItem;
 
+        [Foldout("Animation")]
+        public Animator Animator;
+
+        /// <summary>
+        /// Animator int set to the ID of the destination screen when closing, or -1 if there is no destination.
+        /// </summary>
+        [Foldout("Animation")]
+        [Tooltip("Animator int set to the ID of the destination screen when closing, or -1 if there is no destination.")]
+        public string DestinationInt;
+        protected int DestinationIntHash;
+
         protected override void Reset()
         {
+            ScreenID = FindObjectsOfType<MenuScreen>().Aggregate(-1, (i, screen) => ++i) + 1;
+
             Transition = GetComponent<Transition>();
             FirstItem = transform.childCount > 0 ? transform.GetChild(0).gameObject : null;
+            Animator = GetComponent<Animator>();
         }
 
         protected override void Awake()
         {
             Transition = Transition ?? GetComponent<Transition>();
+            DestinationIntHash = Animator.StringToHash(DestinationInt);
         }
 
         /// <summary>
@@ -61,6 +85,7 @@ namespace SonicRealms.UI
         /// </summary>
         public virtual void Open()
         {
+            gameObject.SetActive(true);
             StartCoroutine(Enter_Coroutine(OnEnterComplete));
         }
 
@@ -69,6 +94,17 @@ namespace SonicRealms.UI
         /// </summary>
         public virtual void Close()
         {
+            Close(null);
+        }
+
+        /// <summary>
+        /// Closes the menu screen and lets it know of the destination screen.
+        /// </summary>
+        public virtual void Close(MenuScreen destination)
+        {
+            if (destination != null && Animator != null && DestinationIntHash != 0)
+                Animator.SetInteger(DestinationIntHash, ScreenID);
+
             StartCoroutine(Exit_Coroutine(OnExitComplete));
         }
 
@@ -89,6 +125,8 @@ namespace SonicRealms.UI
                 PreviouslySelectedItem = eventSystem.currentSelectedGameObject;
                 eventSystem.SetSelectedGameObject(null);
             }
+
+            gameObject.SetActive(false);
         }
 
         protected virtual IEnumerator Enter_Coroutine(Action callback)
@@ -114,7 +152,6 @@ namespace SonicRealms.UI
 
             Transition.Exit();
             yield return new WaitWhile(() => Transition.State == TransitionState.Exit);
-
             callback();
         }
     }

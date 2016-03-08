@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using SonicRealms.Core.Utils;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -14,11 +15,6 @@ namespace SonicRealms.UI
     public class MenuScreenManager : UIBehaviour
     {
         /// <summary>
-        /// All menu screens that are immediate children of the manager.
-        /// </summary>
-        protected List<MenuScreen> MenuScreens;
-
-        /// <summary>
         /// The menu screen to open first
         /// </summary>
         public MenuScreen FirstMenuScreen;
@@ -26,7 +22,14 @@ namespace SonicRealms.UI
         /// <summary>
         /// The currently open menu screen.
         /// </summary>
-        public MenuScreen OpenMenuScreen;
+        [Foldout("Debug")]
+        public MenuScreen CurrentMenuScreen;
+
+        /// <summary>
+        /// All menu screens that are immediate children of the manager.
+        /// </summary>
+        [Foldout("Debug")]
+        public List<MenuScreen> MenuScreens;
 
         protected override void Awake()
         {
@@ -45,6 +48,8 @@ namespace SonicRealms.UI
 
         protected override void Start()
         {
+            UpdateList();
+            foreach (var menuScreen in MenuScreens) menuScreen.gameObject.SetActive(false);
             if (FirstMenuScreen != null) Open(FirstMenuScreen);
         }
 
@@ -59,7 +64,7 @@ namespace SonicRealms.UI
         /// <param name="menuScreen"></param>
         public void Open(MenuScreen menuScreen)
         {
-            StartCoroutine(Open_Coroutine(menuScreen, () => { }));
+            StartCoroutine(Open_Coroutine(menuScreen, () => { CurrentMenuScreen = menuScreen; }));
         }
 
         /// <summary>
@@ -78,18 +83,18 @@ namespace SonicRealms.UI
         /// </summary>
         public void CloseCurrent()
         {
-            StartCoroutine(CloseCurrent_Coroutine(() => { }));
+            StartCoroutine(CloseCurrent_Coroutine(() => {}));
         }
 
         protected IEnumerator Open_Coroutine(MenuScreen menuScreen, Action callback)
         {
-            if (menuScreen == OpenMenuScreen)
+            if (menuScreen == CurrentMenuScreen)
             {
                 callback();
                 yield break;
             }
 
-            if (OpenMenuScreen != null)
+            if (CurrentMenuScreen != null)
             {
                 var done = false;
                 StartCoroutine(CloseCurrent_Coroutine(() => done = true));
@@ -98,18 +103,20 @@ namespace SonicRealms.UI
 
             menuScreen.Open();
             yield return new WaitWhile(() => menuScreen.IsOpening);
+            CurrentMenuScreen = menuScreen;
         }
 
         protected IEnumerator CloseCurrent_Coroutine(Action callback)
         {
-            if (OpenMenuScreen == null)
+            if (CurrentMenuScreen == null)
             {
                 callback();
                 yield break;
             }
 
-            OpenMenuScreen.Close();
-            yield return new WaitWhile(() => OpenMenuScreen.IsClosing);
+            CurrentMenuScreen.Close();
+            yield return new WaitWhile(() => CurrentMenuScreen.IsClosing);
+            CurrentMenuScreen = null;
             callback();
         }
     }
